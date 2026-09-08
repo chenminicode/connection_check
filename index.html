@@ -39,6 +39,11 @@ header p{color:var(--muted);font-size:.95rem;margin-top:2px}
 .checkbox{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;color:var(--muted);cursor:pointer;user-select:none}
 .checkbox input{accent-color:var(--primary)}
 .hint-count{font-size:13px;color:var(--muted)}
+/* 标签页 */
+.tabs{display:flex;gap:6px;margin-top:18px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:5px;box-shadow:var(--shadow)}
+.tab{flex:1;padding:9px 14px;border:none;background:transparent;border-radius:9px;font-size:14px;font-weight:500;color:var(--muted);cursor:pointer;font-family:inherit;transition:background .15s,color .15s}
+.tab.active{background:var(--primary);color:#fff}
+/* 即时检查 */
 .bar{height:10px;background:#e8ecf2;border-radius:999px;overflow:hidden}
 .bar>div{height:100%;width:0;background:linear-gradient(90deg,#2563eb,#5b93f5);border-radius:999px;transition:width .15s linear}
 .progress-meta{display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:13.5px;color:var(--muted)}
@@ -73,6 +78,31 @@ tbody tr:last-child td{border-bottom:none}
 .code-bad{color:var(--bad);font-weight:600}
 .err-msg{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:12.5px}
 .empty{text-align:center;color:var(--muted);padding:40px 16px}
+/* 定时监控 */
+.monitor-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.interval-label{display:inline-flex;align-items:center;gap:8px;font-size:14px}
+.interval-label input{width:92px;padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit}
+.interval-label input:focus{outline:none;border-color:var(--primary)}
+.mon-status{margin-top:12px;font-size:13.5px;color:var(--muted)}
+.chips{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+.chip{background:#fafbfd;border:1px solid var(--border);border-radius:10px;padding:10px 16px;min-width:110px}
+.chip .num{font-size:1.2rem;font-weight:700;line-height:1.2}
+.chip .label{font-size:12px;color:var(--muted)}
+.chart-title{font-size:13.5px;font-weight:600;margin-bottom:8px}
+.chart-box{margin-bottom:20px}
+.chart-box svg{width:100%;height:200px;background:#fbfcfe;border:1px solid var(--border);border-radius:10px}
+.grid-wrap{overflow:auto;max-width:100%;border:1px solid var(--border);border-radius:10px}
+.sgrid{display:grid;gap:2px;padding:8px;background:#fbfcfe;width:max-content;min-width:100%}
+.scell{width:14px;height:14px;border-radius:3px;background:#e4e8ee}
+.scell.ok{background:var(--ok)}
+.scell.bad{background:var(--bad)}
+.scell.err{background:var(--err)}
+.slink{position:sticky;left:8px;background:#fff;z-index:2;width:220px;height:14px;font-size:12px;line-height:14px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:8px;border-radius:3px}
+.slink:hover{color:var(--primary)}
+.slink.selected{color:var(--primary);font-weight:600}
+.shdr{font-size:9.5px;color:var(--muted);display:flex;align-items:flex-end;justify-content:center;white-space:nowrap;overflow:visible}
+.shdr-corner{font-size:11px;color:var(--muted);cursor:default;display:flex;align-items:center}
+.shdr-corner:hover{color:var(--muted)}
 .note{color:var(--muted);font-size:12.5px;margin-top:14px}
 .note code{background:#eef1f5;border-radius:5px;padding:1px 6px;font-family:ui-monospace,Menlo,monospace;font-size:12px}
 #toast{position:fixed;left:50%;bottom:32px;transform:translateX(-50%) translateY(8px);background:#1c2330;color:#fff;padding:10px 20px;border-radius:10px;font-size:14px;box-shadow:0 8px 24px rgba(16,24,40,.25);opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;z-index:99;max-width:80vw}
@@ -87,7 +117,7 @@ tbody tr:last-child td{border-bottom:none}
 <div class="container">
   <header>
     <h1>🔗 链接有效性检查器</h1>
-    <p>粘贴、导入或拖拽链接，批量检查是否可访问（HTTP 状态码 / 重定向 / 响应时间）</p>
+    <p>粘贴、导入或拖拽链接：批量检查有效性，或定时监控可用率并查看历史趋势</p>
   </header>
 
   <section class="card">
@@ -105,48 +135,92 @@ tbody tr:last-child td{border-bottom:none}
     </div>
   </section>
 
-  <section id="progressWrap" class="card" hidden>
-    <div class="bar"><div id="progressBar"></div></div>
-    <div class="progress-meta">
-      <span id="progressText">准备中…</span>
-      <button id="stopBtn" class="btn btn-ghost btn-sm">停止</button>
-    </div>
+  <div class="tabs">
+    <button class="tab active" data-tab="check">📋 批量检查</button>
+    <button class="tab" data-tab="monitor">📈 定时监控</button>
+  </div>
+
+  <section id="tabCheck">
+    <section id="progressWrap" class="card" hidden>
+      <div class="bar"><div id="progressBar"></div></div>
+      <div class="progress-meta">
+        <span id="progressText">准备中…</span>
+        <button id="stopBtn" class="btn btn-ghost btn-sm">停止</button>
+      </div>
+    </section>
+
+    <section class="card" id="statsCard" hidden>
+      <div class="stats">
+        <div class="stat"><div class="num" id="statTotal">0</div><div class="label">共检查</div></div>
+        <div class="stat ok"><div class="num" id="statOk">0</div><div class="label">有效</div></div>
+        <div class="stat bad"><div class="num" id="statBad">0</div><div class="label">无效</div></div>
+        <div class="stat err"><div class="num" id="statErr">0</div><div class="label">无法访问</div></div>
+      </div>
+    </section>
+
+    <section class="card" id="tableCard" hidden>
+      <div class="filters">
+        <button class="pill active" id="filterAll">全部 <b id="cntAll">0</b></button>
+        <button class="pill" id="filterOk">✅ 有效 <b id="cntOk">0</b></button>
+        <button class="pill" id="filterBad">❌ 无效 <b id="cntBad">0</b></button>
+        <button class="pill" id="filterErr">⚠️ 无法访问 <b id="cntErr">0</b></button>
+        <span class="spacer"></span>
+        <button id="exportBtn" class="btn btn-ghost btn-sm">导出 CSV</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th style="width:40px">#</th>
+            <th>状态</th>
+            <th style="width:32%">链接</th>
+            <th>状态码</th>
+            <th style="width:24%">最终链接</th>
+            <th>耗时</th>
+            <th>错误信息</th>
+          </tr></thead>
+          <tbody id="resultsBody">
+            <tr id="emptyRow"><td colspan="7" class="empty">输入链接后点击「开始检查」，结果会实时显示在这里</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
   </section>
 
-  <section class="card" id="statsCard" hidden>
-    <div class="stats">
-      <div class="stat"><div class="num" id="statTotal">0</div><div class="label">共检查</div></div>
-      <div class="stat ok"><div class="num" id="statOk">0</div><div class="label">有效</div></div>
-      <div class="stat bad"><div class="num" id="statBad">0</div><div class="label">无效</div></div>
-      <div class="stat err"><div class="num" id="statErr">0</div><div class="label">无法访问</div></div>
-    </div>
-  </section>
+  <section id="tabMonitor" hidden>
+    <section class="card">
+      <div class="monitor-controls">
+        <label class="interval-label">检查间隔
+          <input type="number" id="intervalInput" min="0.1" max="1440" step="0.1" value="5">
+          分钟
+        </label>
+        <button id="monStartBtn" class="btn btn-primary">开始监控</button>
+        <button id="monStopBtn" class="btn btn-ghost" disabled>停止</button>
+        <button id="checkNowBtn" class="btn btn-ghost">立即检查一轮</button>
+        <span class="spacer"></span>
+        <button id="refreshBtn" class="btn btn-ghost btn-sm">刷新</button>
+      </div>
+      <p id="monStatus" class="mon-status">正在加载监控状态…</p>
+    </section>
 
-  <section class="card" id="tableCard" hidden>
-    <div class="filters">
-      <button class="pill active" id="filterAll">全部 <b id="cntAll">0</b></button>
-      <button class="pill" id="filterOk">✅ 有效 <b id="cntOk">0</b></button>
-      <button class="pill" id="filterBad">❌ 无效 <b id="cntBad">0</b></button>
-      <button class="pill" id="filterErr">⚠️ 无法访问 <b id="cntErr">0</b></button>
-      <span class="spacer"></span>
-      <button id="exportBtn" class="btn btn-ghost btn-sm">导出 CSV</button>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr>
-          <th style="width:40px">#</th>
-          <th>状态</th>
-          <th style="width:32%">链接</th>
-          <th>状态码</th>
-          <th style="width:24%">最终链接</th>
-          <th>耗时</th>
-          <th>错误信息</th>
-        </tr></thead>
-        <tbody id="resultsBody">
-          <tr id="emptyRow"><td colspan="7" class="empty">输入链接后点击「开始检查」，结果会实时显示在这里</td></tr>
-        </tbody>
-      </table>
-    </div>
+    <section class="card" id="vizCard" hidden>
+      <div class="chips">
+        <div class="chip"><div class="num" id="chipRounds">0</div><div class="label">已检查轮数</div></div>
+        <div class="chip"><div class="num" id="chipAvail">—</div><div class="label">平均可用率</div></div>
+        <div class="chip"><div class="num" id="chipLast">—</div><div class="label">上次检查</div></div>
+      </div>
+      <div class="chart-box">
+        <div class="chart-title">每轮可用率趋势（%）</div>
+        <svg id="trendChart"></svg>
+      </div>
+      <div class="chart-title">链接状态历史（每列 = 一轮检查，点击行查看详情）</div>
+      <div class="grid-wrap" id="statusGrid"><div class="empty">暂无历史数据</div></div>
+      <div id="linkDetail" hidden>
+        <div class="chart-title" id="detailTitle" style="margin-top:20px;word-break:break-all"></div>
+        <div class="chips" id="detailStats"></div>
+        <div class="chart-box"><svg id="detailChart"></svg></div>
+      </div>
+      <p class="note" style="margin-top:6px">网格显示最近 120 轮 · 历史数据保留 30 天（monitor.db）</p>
+    </section>
   </section>
 
   <p class="note">判定规则：跟随重定向后 HTTP 2xx / 3xx 为「有效」；4xx / 5xx 为「无效」；DNS 解析失败、连接超时等为「无法访问」。需要本地服务运行：<code>python3 server.py</code></p>
@@ -158,8 +232,9 @@ tbody tr:last-child td{border-bottom:none}
   'use strict';
   const $ = id => document.getElementById(id);
   // 通过 http://localhost:8000 访问时用同源接口；直接双击打开文件时回退到 localhost
-  const API = location.protocol === 'file:' ? 'http://localhost:8000/check' : '/check';
+  const BASE = location.protocol === 'file:' ? 'http://localhost:8000' : '';
   const MAX_URLS = 2000;
+  const GRID_MAX_COLS = 120;   // 状态网格最多显示的轮数
 
   const els = {
     input: $('urlInput'), fileBtn: $('fileBtn'), fileInput: $('fileInput'),
@@ -172,6 +247,14 @@ tbody tr:last-child td{border-bottom:none}
     exportBtn: $('exportBtn'), toast: $('toast'),
     filterAll: $('filterAll'), filterOk: $('filterOk'), filterBad: $('filterBad'), filterErr: $('filterErr'),
     cntAll: $('cntAll'), cntOk: $('cntOk'), cntBad: $('cntBad'), cntErr: $('cntErr'),
+    tabCheck: $('tabCheck'), tabMonitor: $('tabMonitor'),
+    intervalInput: $('intervalInput'), monStartBtn: $('monStartBtn'),
+    monStopBtn: $('monStopBtn'), checkNowBtn: $('checkNowBtn'), refreshBtn: $('refreshBtn'),
+    monStatus: $('monStatus'), vizCard: $('vizCard'),
+    chipRounds: $('chipRounds'), chipAvail: $('chipAvail'), chipLast: $('chipLast'),
+    trendChart: $('trendChart'), grid: $('statusGrid'),
+    linkDetail: $('linkDetail'), detailTitle: $('detailTitle'),
+    detailStats: $('detailStats'), detailChart: $('detailChart'),
   };
 
   let urls = [], results = [], checked = 0;
@@ -266,7 +349,17 @@ tbody tr:last-child td{border-bottom:none}
     els.count.textContent = '';
   });
 
-  /* ---------- 检查 ---------- */
+  /* ---------- 标签页 ---------- */
+  const tabButtons = [...document.querySelectorAll('.tab')];
+  function switchTab(name) {
+    tabButtons.forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+    els.tabCheck.hidden = name !== 'check';
+    els.tabMonitor.hidden = name !== 'monitor';
+    if (name === 'monitor') pollMonitor();
+  }
+  tabButtons.forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
+
+  /* ---------- 即时批量检查 ---------- */
   els.checkBtn.addEventListener('click', run);
   els.stopBtn.addEventListener('click', () => { if (controller) controller.abort(); });
   els.exportBtn.addEventListener('click', exportCsv);
@@ -286,12 +379,13 @@ tbody tr:last-child td{border-bottom:none}
     els.tableCard.hidden = true;
     updateCounters();
     setRunning(true);
+    switchTab('check');
     controller = new AbortController();
     startTime = performance.now();
     timerId = setInterval(tick, 100);
 
     try {
-      const resp = await fetch(API, {
+      const resp = await fetch(BASE + '/check', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ urls, ignore_ssl: els.ignoreSsl.checked }),
@@ -463,6 +557,332 @@ tbody tr:last-child td{border-bottom:none}
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
 
+  /* ---------- 定时监控 ---------- */
+  let lastRenderedT = null;
+  let selectedLink = null;
+
+  els.monStartBtn.addEventListener('click', startMonitor);
+  els.monStopBtn.addEventListener('click', stopMonitor);
+  els.checkNowBtn.addEventListener('click', checkNow);
+  els.refreshBtn.addEventListener('click', pollMonitor);
+
+  async function startMonitor() {
+    const list = extractUrls(els.input.value);
+    if (!list.length) { toast('请先在输入框导入链接'); switchTab('check'); return; }
+    const iv = parseFloat(els.intervalInput.value);
+    if (!(iv >= 0.1)) { toast('间隔时间需 ≥ 0.1 分钟'); return; }
+    try {
+      const resp = await fetch(BASE + '/monitor/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ urls: list, interval_minutes: iv }),
+      });
+      const j = await resp.json();
+      if (!resp.ok) throw new Error(j.error || '启动失败');
+      lastRenderedT = null;
+      renderMonitorStatus(j);
+      switchTab('monitor');
+      toast(`监控已启动：每 ${iv} 分钟检查一次`);
+    } catch (e) { toast('启动监控失败：' + e.message); }
+  }
+
+  async function stopMonitor() {
+    try {
+      const resp = await fetch(BASE + '/monitor/stop', { method: 'POST' });
+      const j = await resp.json();
+      if (!resp.ok) throw new Error(j.error || '停止失败');
+      renderMonitorStatus(j);
+      toast('监控已停止');
+    } catch (e) { toast('停止监控失败：' + e.message); }
+  }
+
+  async function checkNow() {
+    const list = extractUrls(els.input.value);
+    if (!list.length) { toast('请先在输入框导入链接'); return; }
+    try {
+      const resp = await fetch(BASE + '/monitor/check_now', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ urls: list }),
+      });
+      if (!resp.ok) throw new Error((await resp.json()).error || '检查失败');
+      toast('已开始检查一轮，结果将自动显示');
+      // 快速轮询直到出现新结果（最多 20 秒）
+      const before = Date.now() / 1000;
+      const iv = setInterval(async () => {
+        try {
+          const s = await (await fetch(BASE + '/monitor/status')).json();
+          if (s.last_check_at && s.last_check_at > before) {
+            clearInterval(iv);
+            await pollMonitor();
+          }
+        } catch {}
+      }, 1500);
+      setTimeout(() => clearInterval(iv), 20000);
+    } catch (e) { toast('检查失败：' + e.message); }
+  }
+
+  async function pollMonitor() {
+    let status;
+    try { status = await (await fetch(BASE + '/monitor/status')).json(); }
+    catch { renderServerDown(); return; }
+    renderMonitorStatus(status);
+    if (!status.running && !status.last_check_at) return;
+    let hist;
+    try { hist = await (await fetch(BASE + '/history?limit=300')).json(); }
+    catch { return; }
+    if (!hist.rounds || !hist.rounds.length) return;
+    const t = hist.rounds[hist.rounds.length - 1].t;
+    if (t === lastRenderedT) return;
+    lastRenderedT = t;
+    renderViz(hist.rounds, status);
+  }
+
+  function renderServerDown() {
+    els.monStatus.textContent = '⚠️ 无法连接本地服务，请先运行 python3 server.py 启动服务';
+  }
+
+  function renderMonitorStatus(s) {
+    els.monStartBtn.disabled = s.running;
+    els.monStopBtn.disabled = !s.running;
+    if (s.running) {
+      let line = `🟢 监控中：每 ${s.interval_minutes} 分钟检查一次 · 已检查 ${s.rounds_completed} 轮`;
+      if (s.last_check_at) line += ` · 上次 ${fmtTime(s.last_check_at)}`;
+      if (s.next_check_at) line += ` · 下次 ${fmtTime(s.next_check_at)}`;
+      els.monStatus.textContent = line;
+    } else {
+      const n = extractUrls(els.input.value).length;
+      let line = '⚪ 未在监控';
+      if (s.last_check_at) line += ` · 上次检查 ${fmtTime(s.last_check_at)}（历史数据保留 30 天）`;
+      line += `。开始后按设定间隔检查上方输入框中识别的链接（当前 ${n} 条）`;
+      els.monStatus.textContent = line;
+    }
+  }
+
+  function renderViz(rounds, status) {
+    els.vizCard.hidden = false;
+    const shown = rounds;  // /history 最多 300 轮
+
+    // 统计
+    const total = shown.reduce((a, r) => a + r.results.length, 0);
+    const ok = shown.reduce((a, r) => a + r.results.filter(x => x.ok).length, 0);
+    els.chipRounds.textContent = status.rounds_completed;
+    els.chipAvail.textContent = total ? (ok / total * 100).toFixed(1) + '%' : '—';
+    els.chipLast.textContent = shown.length ? fmtTime(shown[shown.length - 1].t) : '—';
+
+    // 每轮可用率趋势
+    const pcts = shown.map(r =>
+      r.results.length ? r.results.filter(x => x.ok).length / r.results.length * 100 : null);
+    drawLine(els.trendChart, pcts, { ymin: 0, ymax: 100, unit: '%', fill: '#2563eb', xLabels: timeLabels(shown) });
+
+    // 状态网格
+    const urlsOrder = status.urls && status.urls.length
+      ? status.urls.filter(u => shown.some(r => r.results.some(x => x.url === u)))
+      : dedupeUrls(shown);
+    buildGrid(shown, urlsOrder);
+
+    // 详情（保持选中链接）
+    if (selectedLink && urlsOrder.includes(selectedLink)) {
+      renderDetail(selectedLink, shown);
+    } else {
+      selectedLink = null;
+      els.linkDetail.hidden = true;
+    }
+  }
+
+  function dedupeUrls(rounds) {
+    const seen = new Set(), out = [];
+    for (const r of rounds) for (const x of r.results) {
+      if (!seen.has(x.url)) { seen.add(x.url); out.push(x.url); }
+    }
+    return out;
+  }
+
+  function buildGrid(rounds, urlsOrder) {
+    els.grid.innerHTML = '';
+    if (!rounds.length || !urlsOrder.length) {
+      els.grid.innerHTML = '<div class="empty">暂无历史数据</div>';
+      return;
+    }
+    const shown = rounds.slice(-GRID_MAX_COLS);
+    const N = shown.length;
+    const grid = document.createElement('div');
+    grid.className = 'sgrid';
+    grid.style.gridTemplateColumns = `220px repeat(${N}, 14px)`;
+
+    const corner = document.createElement('div');
+    corner.className = 'slink shdr-corner';
+    corner.textContent = '链接 \\ 时间 →';
+    grid.appendChild(corner);
+
+    const labelEvery = Math.max(1, Math.ceil(N / 10));
+    shown.forEach((r, i) => {
+      const h = document.createElement('div');
+      h.className = 'shdr';
+      if (i % labelEvery === 0 || i === N - 1) h.textContent = fmtClock(r.t);
+      grid.appendChild(h);
+    });
+
+    urlsOrder.forEach(url => {
+      const link = document.createElement('div');
+      link.className = 'slink' + (url === selectedLink ? ' selected' : '');
+      link.textContent = url;
+      link.title = url;
+      link.addEventListener('click', () => {
+        selectedLink = url;
+        renderDetail(url, rounds);
+        buildGrid(rounds, urlsOrder);
+      });
+      grid.appendChild(link);
+      shown.forEach(r => {
+        const res = r.results.find(x => x.url === url);
+        const cell = document.createElement('div');
+        cell.className = 'scell';
+        if (res) {
+          const cat = catOf(res);
+          cell.className += ' ' + cat;
+          cell.title = `${fmtTime(r.t)} — ${CATS[cat].name}` +
+            (res.status != null ? ` (${res.status})` : '') +
+            (res.error ? ' · ' + res.error : '');
+        }
+        grid.appendChild(cell);
+      });
+    });
+    els.grid.appendChild(grid);
+  }
+
+  function renderDetail(url, rounds) {
+    const rows = rounds.map(r => r.results.find(x => x.url === url));
+    const done = rows.filter(Boolean);
+    const okN = done.filter(r => r.ok).length;
+    const times = done.filter(r => r.ok && r.time_ms != null).map(r => r.time_ms);
+    const avg = times.length ? Math.round(times.reduce((a, b) => a + b, 0) / times.length) : null;
+
+    els.detailTitle.textContent = '🔍 ' + url;
+    els.detailStats.innerHTML = '';
+    const chips = [
+      ['可用率', okN + '/' + done.length + '（' + (done.length ? (okN / done.length * 100).toFixed(1) : 0) + '%）'],
+      ['平均响应', avg != null ? avg + ' ms' : '—'],
+      ['失败次数', String(done.length - okN)],
+    ];
+    for (const [label, num] of chips) {
+      const chip = document.createElement('div');
+      chip.className = 'chip';
+      chip.innerHTML = `<div class="num">${num}</div><div class="label">${label}</div>`;
+      els.detailStats.appendChild(chip);
+    }
+    drawLine(els.detailChart, rows.map(r => r && r.ok ? r.time_ms : null),
+      { ymin: 0, color: '#0e9f6e', xLabels: timeLabels(rounds) });
+    els.linkDetail.hidden = false;
+  }
+
+  /* ---------- SVG 折线图 ---------- */
+  const NS = 'http://www.w3.org/2000/svg';
+
+  function drawLine(svg, data, opts) {
+    opts = opts || {};
+    const W = 800, H = 200, P = { l: 46, r: 14, t: 14, b: 26 };
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    svg.innerHTML = '';
+    const vals = data.filter(v => v != null);
+    if (!vals.length) {
+      const t = document.createElementNS(NS, 'text');
+      t.setAttribute('x', W / 2); t.setAttribute('y', H / 2);
+      t.setAttribute('text-anchor', 'middle'); t.setAttribute('fill', '#9aa3af'); t.setAttribute('font-size', '12');
+      t.textContent = '暂无数据';
+      svg.appendChild(t);
+      return;
+    }
+    let ymin = opts.ymin != null ? opts.ymin : Math.min(...vals);
+    let ymax = opts.ymax != null ? opts.ymax : Math.max(...vals);
+    if (ymax <= ymin) ymax = ymin + 1;
+    const n = data.length;
+    const x = i => P.l + (n <= 1 ? (W - P.l - P.r) / 2 : i * (W - P.l - P.r) / (n - 1));
+    const y = v => H - P.b - (v - ymin) / (ymax - ymin) * (H - P.t - P.b);
+
+    // 网格线与 Y 轴刻度
+    for (const tv of niceTicks(ymin, ymax, 3)) {
+      const line = document.createElementNS(NS, 'line');
+      line.setAttribute('x1', P.l); line.setAttribute('x2', W - P.r);
+      line.setAttribute('y1', y(tv)); line.setAttribute('y2', y(tv));
+      line.setAttribute('stroke', '#e4e8ee');
+      svg.appendChild(line);
+      const text = document.createElementNS(NS, 'text');
+      text.setAttribute('x', P.l - 6); text.setAttribute('y', y(tv) + 3.5);
+      text.setAttribute('text-anchor', 'end'); text.setAttribute('fill', '#667085'); text.setAttribute('font-size', '11');
+      text.textContent = Math.round(tv) + (opts.unit || '');
+      svg.appendChild(text);
+    }
+    // 折线（跳过空值，分段绘制）
+    const segs = [];
+    let cur = [];
+    data.forEach((v, i) => {
+      if (v == null) { if (cur.length) { segs.push(cur); cur = []; } }
+      else cur.push([i, v]);
+    });
+    if (cur.length) segs.push(cur);
+    const color = opts.color || '#2563eb';
+    for (const seg of segs) {
+      const d = seg.map(([i, v], k) => (k ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1)).join(' ');
+      if (opts.fill) {
+        const area = document.createElementNS(NS, 'path');
+        area.setAttribute('d', d + ` L${x(seg[seg.length - 1][0]).toFixed(1)} ${y(ymin).toFixed(1)} L${x(seg[0][0]).toFixed(1)} ${y(ymin).toFixed(1)} Z`);
+        area.setAttribute('fill', opts.fill); area.setAttribute('opacity', '0.12');
+        svg.appendChild(area);
+      }
+      const path = document.createElementNS(NS, 'path');
+      path.setAttribute('d', d);
+      path.setAttribute('fill', 'none'); path.setAttribute('stroke', color);
+      path.setAttribute('stroke-width', '2'); path.setAttribute('stroke-linejoin', 'round');
+      svg.appendChild(path);
+    }
+    if (data.length <= 100) {
+      data.forEach((v, i) => {
+        if (v == null) return;
+        const c = document.createElementNS(NS, 'circle');
+        c.setAttribute('cx', x(i)); c.setAttribute('cy', y(v)); c.setAttribute('r', '2.2');
+        c.setAttribute('fill', color);
+        svg.appendChild(c);
+      });
+    }
+    // X 轴首尾时间标签
+    if (opts.xLabels && opts.xLabels.length) {
+      for (const [i, label] of opts.xLabels) {
+        const text = document.createElementNS(NS, 'text');
+        text.setAttribute('x', i === 0 ? P.l : W - P.r);
+        text.setAttribute('y', H - 8);
+        text.setAttribute('text-anchor', i === 0 ? 'start' : 'end');
+        text.setAttribute('fill', '#667085'); text.setAttribute('font-size', '11');
+        text.textContent = label;
+        svg.appendChild(text);
+      }
+    }
+  }
+
+  function niceTicks(min, max, count) {
+    const span = max - min || 1;
+    const step0 = Math.pow(10, Math.floor(Math.log10(span / count)));
+    const err = span / count / step0;
+    const f = err >= 7.5 ? 10 : err >= 3.5 ? 5 : err >= 1.5 ? 2 : 1;
+    const s = step0 * f;
+    const out = [];
+    for (let v = Math.ceil(min / s) * s; v <= max + 1e-9; v += s) out.push(v);
+    return out.length ? out : [min];
+  }
+
+  const pad2 = n => String(n).padStart(2, '0');
+  const fmtTime = ts => {
+    const d = new Date(ts * 1000);
+    return `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  };
+  const fmtClock = ts => {
+    const d = new Date(ts * 1000);
+    return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  };
+  const timeLabels = rounds => rounds.length
+    ? [[0, fmtTime(rounds[0].t)], [rounds.length - 1, fmtTime(rounds[rounds.length - 1].t)]]
+    : [];
+
   /* ---------- 提示 ---------- */
   let toastTimer;
   function toast(msg) {
@@ -472,7 +892,10 @@ tbody tr:last-child td{border-bottom:none}
     toastTimer = setTimeout(() => els.toast.classList.remove('show'), 3200);
   }
 
+  /* ---------- 初始化 ---------- */
   scheduleCount();
+  pollMonitor();
+  setInterval(pollMonitor, 10000);
 })();
 </script>
 </body>

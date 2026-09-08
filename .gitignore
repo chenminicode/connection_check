@@ -1,3 +1,6 @@
 __pycache__/
 *.pyc
 .DS_Store
+monitor.db
+monitor.db-wal
+monitor.db-shm
