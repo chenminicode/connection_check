@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>链接有效性检查器</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔗</text></svg>">
+<style>
+:root{
+  --bg:#f4f6f9; --card:#fff; --border:#e4e8ee;
+  --text:#1c2330; --muted:#667085;
+  --primary:#2563eb; --primary-600:#1d4ed8;
+  --ok:#0e9f6e; --ok-bg:#e6f6ef;
+  --bad:#d92d20; --bad-bg:#fdecea;
+  --err:#b54708; --err-bg:#fdf1e3;
+  --radius:12px;
+  --shadow:0 1px 2px rgba(16,24,40,.05),0 1px 3px rgba(16,24,40,.07);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.6;padding:36px 16px 72px}
+.container{max-width:1020px;margin:0 auto}
+header h1{font-size:1.55rem;font-weight:700}
+header p{color:var(--muted);font-size:.95rem;margin-top:2px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-top:18px;box-shadow:var(--shadow)}
+#urlInput{width:100%;min-height:150px;padding:12px 14px;border:1.5px solid var(--border);border-radius:10px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;line-height:1.7;color:var(--text);resize:vertical;background:#fbfcfe;transition:border-color .15s,background .15s}
+#urlInput:focus{outline:none;border-color:var(--primary);background:#fff}
+#urlInput.dragging{border-color:var(--primary);background:#eef4ff}
+#urlInput::placeholder{color:#9aa3af}
+.toolbar{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap}
+.spacer{flex:1}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 18px;border-radius:9px;font-size:14px;font-family:inherit;font-weight:500;border:1px solid transparent;cursor:pointer;transition:background .15s}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-primary:not(:disabled):hover{background:var(--primary-600)}
+.btn-ghost{background:#fff;border-color:var(--border);color:var(--text)}
+.btn-ghost:not(:disabled):hover{background:#f7f9fc}
+.btn-sm{padding:5px 13px;font-size:13px}
+.checkbox{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;color:var(--muted);cursor:pointer;user-select:none}
+.checkbox input{accent-color:var(--primary)}
+.hint-count{font-size:13px;color:var(--muted)}
+.bar{height:10px;background:#e8ecf2;border-radius:999px;overflow:hidden}
+.bar>div{height:100%;width:0;background:linear-gradient(90deg,#2563eb,#5b93f5);border-radius:999px;transition:width .15s linear}
+.progress-meta{display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:13.5px;color:var(--muted)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.stat{background:#fafbfd;border:1px solid var(--border);border-radius:10px;padding:12px 16px}
+.stat .num{font-size:1.45rem;font-weight:700;line-height:1.2}
+.stat .label{font-size:12.5px;color:var(--muted);margin-top:2px}
+.stat.ok .num{color:var(--ok)}
+.stat.bad .num{color:var(--bad)}
+.stat.err .num{color:var(--err)}
+.filters{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:5px 14px;border-radius:999px;border:1px solid var(--border);background:#fff;font-size:13px;color:var(--muted);cursor:pointer;font-family:inherit}
+.pill b{font-weight:700}
+.pill.active{background:var(--primary);border-color:var(--primary);color:#fff}
+.pill:not(.active):hover{background:#f7f9fc}
+.table-wrap{overflow:auto;max-height:540px;border:1px solid var(--border);border-radius:10px}
+table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:860px}
+thead th{position:sticky;top:0;background:#fafbfd;z-index:1;text-align:left;font-size:12.5px;font-weight:600;color:var(--muted);padding:9px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
+tbody td{padding:8px 10px;border-bottom:1px solid #f0f2f6;vertical-align:top}
+tbody tr:hover{background:#fafbfd}
+tbody tr:last-child td{border-bottom:none}
+.idx{color:#9aa3af;width:40px}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.badge .dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
+.badge.ok{color:var(--ok);background:var(--ok-bg)}
+.badge.bad{color:var(--bad);background:var(--bad-bg)}
+.badge.err{color:var(--err);background:var(--err-bg)}
+.truncate{display:block;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--primary);text-decoration:none}
+.truncate:hover{text-decoration:underline}
+.truncate.muted{color:var(--muted);max-width:220px}
+.code-ok{color:var(--ok);font-weight:600}
+.code-bad{color:var(--bad);font-weight:600}
+.err-msg{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:12.5px}
+.empty{text-align:center;color:var(--muted);padding:40px 16px}
+.note{color:var(--muted);font-size:12.5px;margin-top:14px}
+.note code{background:#eef1f5;border-radius:5px;padding:1px 6px;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+#toast{position:fixed;left:50%;bottom:32px;transform:translateX(-50%) translateY(8px);background:#1c2330;color:#fff;padding:10px 20px;border-radius:10px;font-size:14px;box-shadow:0 8px 24px rgba(16,24,40,.25);opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;z-index:99;max-width:80vw}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+@media (max-width:640px){
+  .stats{grid-template-columns:repeat(2,1fr)}
+  header h1{font-size:1.3rem}
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>🔗 链接有效性检查器</h1>
+    <p>粘贴、导入或拖拽链接，批量检查是否可访问（HTTP 状态码 / 重定向 / 响应时间）</p>
+  </header>
+
+  <section class="card">
+    <textarea id="urlInput" spellcheck="false"
+      placeholder="每行一个链接，也可以直接粘贴包含链接的任意文本（自动识别 http/https 链接，自动去重）&#10;&#10;例如：&#10;https://example.com&#10;www.baidu.com&#10;https://httpbin.org/status/404"></textarea>
+    <div class="toolbar">
+      <button id="fileBtn" class="btn btn-ghost">📄 从文件导入</button>
+      <input type="file" id="fileInput" accept=".txt,.csv,.html,.htm,.md,.json" hidden>
+      <button id="sampleBtn" class="btn btn-ghost btn-sm">填入示例</button>
+      <button id="clearBtn" class="btn btn-ghost btn-sm">清空</button>
+      <label class="checkbox"><input type="checkbox" id="ignoreSsl"> 忽略 SSL 证书错误</label>
+      <span class="spacer"></span>
+      <span id="count" class="hint-count"></span>
+      <button id="checkBtn" class="btn btn-primary">开始检查</button>
+    </div>
+  </section>
+
+  <section id="progressWrap" class="card" hidden>
+    <div class="bar"><div id="progressBar"></div></div>
+    <div class="progress-meta">
+      <span id="progressText">准备中…</span>
+      <button id="stopBtn" class="btn btn-ghost btn-sm">停止</button>
+    </div>
+  </section>
+
+  <section class="card" id="statsCard" hidden>
+    <div class="stats">
+      <div class="stat"><div class="num" id="statTotal">0</div><div class="label">共检查</div></div>
+      <div class="stat ok"><div class="num" id="statOk">0</div><div class="label">有效</div></div>
+      <div class="stat bad"><div class="num" id="statBad">0</div><div class="label">无效</div></div>
+      <div class="stat err"><div class="num" id="statErr">0</div><div class="label">无法访问</div></div>
+    </div>
+  </section>
+
+  <section class="card" id="tableCard" hidden>
+    <div class="filters">
+      <button class="pill active" id="filterAll">全部 <b id="cntAll">0</b></button>
+      <button class="pill" id="filterOk">✅ 有效 <b id="cntOk">0</b></button>
+      <button class="pill" id="filterBad">❌ 无效 <b id="cntBad">0</b></button>
+      <button class="pill" id="filterErr">⚠️ 无法访问 <b id="cntErr">0</b></button>
+      <span class="spacer"></span>
+      <button id="exportBtn" class="btn btn-ghost btn-sm">导出 CSV</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th style="width:40px">#</th>
+          <th>状态</th>
+          <th style="width:32%">链接</th>
+          <th>状态码</th>
+          <th style="width:24%">最终链接</th>
+          <th>耗时</th>
+          <th>错误信息</th>
+        </tr></thead>
+        <tbody id="resultsBody">
+          <tr id="emptyRow"><td colspan="7" class="empty">输入链接后点击「开始检查」，结果会实时显示在这里</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <p class="note">判定规则：跟随重定向后 HTTP 2xx / 3xx 为「有效」；4xx / 5xx 为「无效」；DNS 解析失败、连接超时等为「无法访问」。需要本地服务运行：<code>python3 server.py</code></p>
+</div>
+<div id="toast"></div>
+
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  // 通过 http://localhost:8000 访问时用同源接口；直接双击打开文件时回退到 localhost
+  const API = location.protocol === 'file:' ? 'http://localhost:8000/check' : '/check';
+  const MAX_URLS = 2000;
+
+  const els = {
+    input: $('urlInput'), fileBtn: $('fileBtn'), fileInput: $('fileInput'),
+    sampleBtn: $('sampleBtn'), clearBtn: $('clearBtn'), checkBtn: $('checkBtn'),
+    stopBtn: $('stopBtn'), ignoreSsl: $('ignoreSsl'), count: $('count'),
+    progressWrap: $('progressWrap'), progressBar: $('progressBar'), progressText: $('progressText'),
+    statsCard: $('statsCard'), statTotal: $('statTotal'), statOk: $('statOk'),
+    statBad: $('statBad'), statErr: $('statErr'),
+    tableCard: $('tableCard'), body: $('resultsBody'), empty: $('emptyRow'),
+    exportBtn: $('exportBtn'), toast: $('toast'),
+    filterAll: $('filterAll'), filterOk: $('filterOk'), filterBad: $('filterBad'), filterErr: $('filterErr'),
+    cntAll: $('cntAll'), cntOk: $('cntOk'), cntBad: $('cntBad'), cntErr: $('cntErr'),
+  };
+
+  let urls = [], results = [], checked = 0;
+  let stats = { ok: 0, bad: 0, err: 0 };
+  let activeFilter = 'all';
+  let running = false, controller = null, timerId = null, startTime = 0;
+
+  const CATS = {
+    ok:  { name: '有效',     badge: 'ok'  },
+    bad: { name: '无效',     badge: 'bad' },
+    err: { name: '无法访问', badge: 'err' },
+  };
+  const catOf = r => r.ok ? 'ok' : (r.status ? 'bad' : 'err');
+
+  const SAMPLE = [
+    'https://www.baidu.com',
+    'https://example.com',
+    'https://httpbin.org/status/200',
+    'https://httpbin.org/status/404',
+    'https://httpbin.org/redirect/3',
+    'https://this-domain-should-not-exist-12345.com',
+  ];
+
+  /* ---------- 链接提取与去重 ---------- */
+  const URL_RE = /https?:\/\/[^\s"'<>()（）]+/gi;
+
+  function extractUrls(text) {
+    const found = new Set();
+    for (const raw of text.split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line) continue;
+      // 整行是「不带协议的域名/地址」时，自动补 https://
+      if (!/^https?:\/\//i.test(line) && !/\s/.test(line) &&
+          /^[a-z0-9._-]+\.[a-z]{2,}([:/][^\s]*)?$/i.test(line)) {
+        found.add('https://' + line);
+        continue;
+      }
+      let m;
+      URL_RE.lastIndex = 0;
+      while ((m = URL_RE.exec(line)) !== null) {
+        const u = m[0].replace(/[.,;:!?)\]}>"'，。；：！？]+$/, '');
+        if (u.length > 10) found.add(u);
+      }
+    }
+    return [...found].slice(0, MAX_URLS);
+  }
+
+  let countTimer = null;
+  function scheduleCount() {
+    clearTimeout(countTimer);
+    countTimer = setTimeout(() => {
+      if (running) return;
+      const n = extractUrls(els.input.value).length;
+      els.count.textContent = n ? `已识别 ${n} 条链接（自动去重）` : '';
+    }, 300);
+  }
+  els.input.addEventListener('input', scheduleCount);
+
+  /* ---------- 导入：文件选择 / 拖拽 ---------- */
+  function appendToInput(text) {
+    const cur = els.input.value.trim();
+    els.input.value = cur ? cur + '\n' + text.trim() : text.trim();
+    scheduleCount();
+  }
+  els.fileBtn.addEventListener('click', () => els.fileInput.click());
+  els.fileInput.addEventListener('change', async () => {
+    const f = els.fileInput.files[0];
+    els.fileInput.value = '';
+    if (!f) return;
+    try { appendToInput(await f.text()); }
+    catch { toast('文件读取失败'); }
+  });
+  for (const ev of ['dragenter', 'dragover']) {
+    els.input.addEventListener(ev, e => { e.preventDefault(); els.input.classList.add('dragging'); });
+  }
+  for (const ev of ['dragleave', 'drop']) {
+    els.input.addEventListener(ev, e => { e.preventDefault(); els.input.classList.remove('dragging'); });
+  }
+  els.input.addEventListener('drop', async e => {
+    const f = e.dataTransfer && e.dataTransfer.files[0];
+    if (!f) return;
+    try { appendToInput(await f.text()); }
+    catch { toast('文件读取失败'); }
+  });
+
+  els.sampleBtn.addEventListener('click', () => {
+    els.input.value = SAMPLE.join('\n');
+    scheduleCount();
+  });
+  els.clearBtn.addEventListener('click', () => {
+    els.input.value = '';
+    els.count.textContent = '';
+  });
+
+  /* ---------- 检查 ---------- */
+  els.checkBtn.addEventListener('click', run);
+  els.stopBtn.addEventListener('click', () => { if (controller) controller.abort(); });
+  els.exportBtn.addEventListener('click', exportCsv);
+
+  async function run() {
+    if (running) return;
+    const list = extractUrls(els.input.value);
+    if (!list.length) { toast('请先输入或导入至少一条链接'); return; }
+
+    urls = list; results = []; checked = 0;
+    stats = { ok: 0, bad: 0, err: 0 };
+    activeFilter = 'all';
+    FILTERS.forEach(([c, b]) => b.classList.toggle('active', c === 'all'));
+    els.body.innerHTML = '';
+    els.empty.hidden = false;
+    els.statsCard.hidden = true;
+    els.tableCard.hidden = true;
+    updateCounters();
+    setRunning(true);
+    controller = new AbortController();
+    startTime = performance.now();
+    timerId = setInterval(tick, 100);
+
+    try {
+      const resp = await fetch(API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ urls, ignore_ssl: els.ignoreSsl.checked }),
+        signal: controller.signal,
+      });
+      if (!resp.ok) {
+        let msg = `服务返回错误（HTTP ${resp.status}）`;
+        try { const j = await resp.json(); if (j && j.error) msg = j.error; } catch {}
+        throw new Error(msg);
+      }
+      // 服务端以 NDJSON 流式返回，逐行解析、实时更新
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf('\n')) !== -1) {
+          const line = buf.slice(0, nl).trim();
+          buf = buf.slice(nl + 1);
+          if (!line) continue;
+          try { onResult(JSON.parse(line)); } catch {}
+        }
+      }
+      const rest = decoder.decode().trim();
+      if (rest) { try { onResult(JSON.parse(rest)); } catch {} }
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        let msg = err.message;
+        if (msg === 'Failed to fetch' || err instanceof TypeError) {
+          msg = '无法连接本地服务，请先运行 python3 server.py 启动服务';
+        }
+        toast('检查失败：' + msg);
+      }
+    } finally {
+      clearInterval(timerId);
+      setRunning(false);
+      finishText();
+    }
+  }
+
+  function setRunning(v) {
+    running = v;
+    [els.checkBtn, els.fileBtn, els.sampleBtn, els.clearBtn, els.ignoreSsl].forEach(el => { el.disabled = v; });
+    els.stopBtn.hidden = !v;
+    if (v) els.progressWrap.hidden = false;
+  }
+
+  function tick() {
+    const secs = ((performance.now() - startTime) / 1000).toFixed(1);
+    els.progressBar.style.width = (urls.length ? checked / urls.length * 100 : 0) + '%';
+    els.progressText.textContent = `正在检查 ${checked} / ${urls.length} · 已用时 ${secs}s`;
+  }
+
+  function finishText() {
+    const secs = ((performance.now() - startTime) / 1000).toFixed(1);
+    const prefix = checked === urls.length ? '✅ 检查完成' : `⏸ 已停止（${checked} / ${urls.length}）`;
+    els.progressText.textContent = `${prefix}：有效 ${stats.ok} · 无效 ${stats.bad} · 无法访问 ${stats.err} · 用时 ${secs}s`;
+    els.progressBar.style.width = (checked / (urls.length || 1) * 100) + '%';
+  }
+
+  function onResult(r) {
+    results.push(r);
+    checked++;
+    const cat = catOf(r);
+    stats[cat]++;
+    els.statsCard.hidden = false;
+    els.tableCard.hidden = false;
+    els.empty.hidden = true;
+    const tr = buildRow(results.length - 1, r, cat);
+    if (activeFilter !== 'all' && cat !== activeFilter) tr.style.display = 'none';
+    els.body.appendChild(tr);
+    updateCounters();
+  }
+
+  function updateCounters() {
+    els.statTotal.textContent = checked;
+    els.statOk.textContent = stats.ok;
+    els.statBad.textContent = stats.bad;
+    els.statErr.textContent = stats.err;
+    els.cntAll.textContent = checked;
+    els.cntOk.textContent = stats.ok;
+    els.cntBad.textContent = stats.bad;
+    els.cntErr.textContent = stats.err;
+  }
+
+  /* ---------- 结果表格 ---------- */
+  function buildRow(index, r, cat) {
+    const tr = document.createElement('tr');
+    tr.dataset.cat = cat;
+
+    const tdIdx = document.createElement('td');
+    tdIdx.className = 'idx';
+    tdIdx.textContent = index + 1;
+
+    const tdBadge = document.createElement('td');
+    const badge = document.createElement('span');
+    badge.className = 'badge ' + CATS[cat].badge;
+    badge.innerHTML = '<span class="dot"></span>' + CATS[cat].name;
+    tdBadge.appendChild(badge);
+
+    const tdUrl = document.createElement('td');
+    const a = document.createElement('a');
+    a.className = 'truncate';
+    a.href = r.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+    a.textContent = r.url; a.title = r.url;
+    tdUrl.appendChild(a);
+
+    const tdCode = document.createElement('td');
+    tdCode.textContent = r.status == null ? '—' : String(r.status);
+    if (r.status != null) tdCode.className = r.status < 400 ? 'code-ok' : 'code-bad';
+
+    const tdFinal = document.createElement('td');
+    if (r.final_url && r.final_url !== r.url) {
+      const fa = document.createElement('a');
+      fa.className = 'truncate muted';
+      fa.href = r.final_url; fa.target = '_blank'; fa.rel = 'noopener noreferrer';
+      fa.textContent = r.final_url; fa.title = '重定向后: ' + r.final_url;
+      tdFinal.appendChild(fa);
+    } else {
+      tdFinal.textContent = '—';
+    }
+
+    const tdTime = document.createElement('td');
+    tdTime.textContent = r.time_ms == null ? '—' : r.time_ms + ' ms';
+
+    const tdErr = document.createElement('td');
+    tdErr.className = 'err-msg';
+    tdErr.textContent = r.error || '—';
+    if (r.error) tdErr.title = r.error;
+
+    tr.append(tdIdx, tdBadge, tdUrl, tdCode, tdFinal, tdTime, tdErr);
+    return tr;
+  }
+
+  /* ---------- 筛选 ---------- */
+  const FILTERS = [['all', els.filterAll], ['ok', els.filterOk], ['bad', els.filterBad], ['err', els.filterErr]];
+  FILTERS.forEach(([cat, btn]) => btn.addEventListener('click', () => {
+    activeFilter = cat;
+    FILTERS.forEach(([c, b]) => b.classList.toggle('active', c === cat));
+    for (const tr of els.body.children) {
+      tr.style.display = (cat === 'all' || tr.dataset.cat === cat) ? '' : 'none';
+    }
+  }));
+
+  /* ---------- 导出 CSV ---------- */
+  function exportCsv() {
+    if (!results.length) { toast('暂无结果可导出'); return; }
+    const header = ['序号', '链接', '状态', 'HTTP状态码', '最终链接', '耗时(ms)', '错误信息'];
+    const rows = results.map((r, i) => [
+      i + 1, r.url, CATS[catOf(r)].name,
+      r.status == null ? '' : r.status,
+      r.final_url || '', r.time_ms == null ? '' : r.time_ms, r.error || '',
+    ]);
+    const csv = [header, ...rows]
+      .map(cols => cols.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(','))
+      .join('\r\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    const d = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    a.download = `链接检查结果_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  /* ---------- 提示 ---------- */
+  let toastTimer;
+  function toast(msg) {
+    els.toast.textContent = msg;
+    els.toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => els.toast.classList.remove('show'), 3200);
+  }
+
+  scheduleCount();
+})();
+</script>
+</body>
+</html>
