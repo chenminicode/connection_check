@@ -77,9 +77,9 @@ def friendly_error(exc):
     return text[:200]
 
 
-def check_one(url, ignore_ssl=False):
+def check_one(url, name="", ignore_ssl=False):
     """检查单个链接，返回结果字典。"""
-    result = {"url": url, "ok": False, "status": None,
+    result = {"name": name, "url": url, "ok": False, "status": None,
               "final_url": url, "time_ms": None, "error": None}
 
     parsed = urlparse(url)
@@ -109,6 +109,26 @@ def check_one(url, ignore_ssl=False):
     return result
 
 
+def parse_items(items):
+    """把请求中的链接条目统一解析为 (name, url) 列表。
+
+    兼容两种写法：纯字符串 url，或 {"name": 名称, "url": 链接} 对象；按 url 去重。
+    """
+    out, seen = [], set()
+    for it in items:
+        if isinstance(it, str):
+            name, url = "", it.strip()
+        elif isinstance(it, dict):
+            name = str(it.get("name") or "").strip()
+            url = str(it.get("url") or "").strip()
+        else:
+            continue
+        if url and url not in seen:
+            seen.add(url)
+            out.append((name, url))
+    return out[:MAX_URLS]
+
+
 class Store:
     """SQLite 存储：检查历史 + 监控配置。"""
 
@@ -130,11 +150,16 @@ class Store:
             conn.execute("""CREATE TABLE IF NOT EXISTS checks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 url TEXT NOT NULL,
+                name TEXT NOT NULL DEFAULT '',
                 checked_at REAL NOT NULL,
                 ok INTEGER NOT NULL,
                 status INTEGER,
                 time_ms INTEGER,
                 error TEXT)""")
+            # 旧库迁移：早期版本没有 name 列
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(checks)").fetchall()]
+            if "name" not in cols:
+                conn.execute("ALTER TABLE checks ADD COLUMN name TEXT NOT NULL DEFAULT ''")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_checks_time ON checks(checked_at)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_checks_url_time ON checks(url, checked_at)")
             conn.execute("""CREATE TABLE IF NOT EXISTS config (
@@ -152,11 +177,12 @@ class Store:
                          (key, json.dumps(value, ensure_ascii=False)))
 
     def insert_round(self, checked_at, results):
-        rows = [(r["url"], checked_at, int(r["ok"]), r["status"], r["time_ms"], r["error"])
+        rows = [(r["url"], r.get("name", ""), checked_at, int(r["ok"]),
+                 r["status"], r["time_ms"], r["error"])
                 for r in results]
         with self.connect() as conn:
-            conn.executemany("INSERT INTO checks(url, checked_at, ok, status, time_ms, error) "
-                             "VALUES(?,?,?,?,?,?)", rows)
+            conn.executemany("INSERT INTO checks(url, name, checked_at, ok, status, time_ms, error) "
+                             "VALUES(?,?,?,?,?,?,?)", rows)
 
     def prune(self):
         cutoff = time.time() - RETENTION_DAYS * 86400
@@ -168,15 +194,16 @@ class Store:
         limit = max(1, min(limit, 1000))
         with self.connect() as conn:
             rows = conn.execute(
-                "SELECT url, checked_at, ok, status, time_ms, error FROM checks "
+                "SELECT url, name, checked_at, ok, status, time_ms, error FROM checks "
                 "ORDER BY checked_at DESC, id DESC LIMIT ?",
                 (limit * 100 + 1000,)).fetchall()
         rounds = []
-        for url, t, ok, status, time_ms, err in reversed(rows):
+        for url, name, t, ok, status, time_ms, err in reversed(rows):
             if not rounds or rounds[-1]["t"] != t:
                 rounds.append({"t": t, "results": []})
             rounds[-1]["results"].append({
-                "url": url, "ok": bool(ok), "status": status, "time_ms": time_ms, "error": err,
+                "url": url, "name": name, "ok": bool(ok), "status": status,
+                "time_ms": time_ms, "error": err,
             })
         return rounds[-limit:]
 
@@ -204,7 +231,9 @@ class Monitor:
         state = self.store.get_config("monitor", {})
         if state.get("running"):
             self.interval_minutes = state.get("interval_minutes", 5.0)
-            self.urls = state.get("urls", [])
+            # 兼容旧配置：早期版本的 urls 是纯字符串列表
+            self.urls = [u if isinstance(u, dict) else {"name": "", "url": u}
+                         for u in state.get("urls", [])]
             self.started_at = state.get("started_at")
             self.last_check_at = state.get("last_check_at")
             self.rounds_completed = state.get("rounds_completed", 0)
@@ -229,10 +258,10 @@ class Monitor:
         self._thread.start()
 
     def start(self, urls, interval_minutes):
-        """启动监控（若已在监控则先停止并替换配置）。"""
+        """启动监控（若已在监控则先停止并替换配置）。urls 为 (name, url) 列表。"""
         with self._lock:
             self._stop_thread()
-            self.urls = urls
+            self.urls = [{"name": n, "url": u} for n, u in urls]
             self.interval_minutes = interval_minutes
             self.started_at = time.time()
             self.rounds_completed = 0
@@ -255,10 +284,10 @@ class Monitor:
             thread.join(timeout=2)
 
     def check_now(self, urls=None):
-        """立即执行一轮检查（不改变调度状态）。"""
+        """立即执行一轮检查（不改变调度状态）。urls 为 (name, url) 列表。"""
         with self._lock:
             if urls:
-                self.urls = list(urls)
+                self.urls = [{"name": n, "url": u} for n, u in urls]
             target = list(self.urls)
         if not target:
             return
@@ -277,7 +306,9 @@ class Monitor:
         started = time.time()
         worker = partial(check_one, ignore_ssl=False)
         with ThreadPoolExecutor(max_workers=CONCURRENCY) as pool:
-            results = list(pool.map(worker, urls))
+            results = list(pool.map(worker,
+                                    [it["url"] for it in urls],
+                                    [it.get("name", "") for it in urls]))
         self.store.insert_round(started, results)
         self.store.prune()
         with self._lock:
@@ -392,9 +423,8 @@ class Handler(BaseHTTPRequestHandler):
         payload = self._read_json()
         if payload is None:
             return
-        urls = [u for u in payload.get("urls", [])
-                if isinstance(u, str) and u.strip()][:MAX_URLS]
-        if not urls:
+        items = parse_items(payload.get("urls", []))
+        if not items:
             self._send_json({"error": "没有可检查的链接"}, 400)
             return
         ignore_ssl = bool(payload.get("ignore_ssl"))
@@ -408,7 +438,9 @@ class Handler(BaseHTTPRequestHandler):
         worker = partial(check_one, ignore_ssl=ignore_ssl)
         executor = ThreadPoolExecutor(max_workers=CONCURRENCY)
         try:
-            for result in executor.map(worker, urls):
+            for result in executor.map(worker,
+                                       [u for _, u in items],
+                                       [n for n, _ in items]):
                 line = (json.dumps(result, ensure_ascii=False) + "\n").encode("utf-8")
                 try:
                     self.wfile.write(line)
@@ -422,9 +454,8 @@ class Handler(BaseHTTPRequestHandler):
         payload = self._read_json()
         if payload is None:
             return
-        urls = [u for u in payload.get("urls", [])
-                if isinstance(u, str) and u.strip()][:MAX_URLS]
-        if not urls:
+        items = parse_items(payload.get("urls", []))
+        if not items:
             self._send_json({"error": "没有可监控的链接"}, 400)
             return
         try:
@@ -433,7 +464,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"error": "间隔时间格式不正确"}, 400)
             return
         interval = min(max(interval, 0.1), 1440)
-        MONITOR.start(urls, interval)
+        MONITOR.start(items, interval)
         self._send_json({"ok": True, **MONITOR.status()})
 
     def _handle_monitor_stop(self):
@@ -447,9 +478,8 @@ class Handler(BaseHTTPRequestHandler):
         payload = self._read_json()
         if payload is None:
             return
-        urls = [u for u in payload.get("urls", [])
-                if isinstance(u, str) and u.strip()][:MAX_URLS]
-        MONITOR.check_now(urls if urls else None)
+        items = parse_items(payload.get("urls", []))
+        MONITOR.check_now(items if items else None)
         self._send_json({"ok": True})
 
     def log_message(self, fmt, *args):

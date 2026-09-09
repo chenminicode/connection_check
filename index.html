@@ -60,7 +60,7 @@ header p{color:var(--muted);font-size:.95rem;margin-top:2px}
 .pill.active{background:var(--primary);border-color:var(--primary);color:#fff}
 .pill:not(.active):hover{background:#f7f9fc}
 .table-wrap{overflow:auto;max-height:540px;border:1px solid var(--border);border-radius:10px}
-table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:860px}
+table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:960px}
 thead th{position:sticky;top:0;background:#fafbfd;z-index:1;text-align:left;font-size:12.5px;font-weight:600;color:var(--muted);padding:9px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
 tbody td{padding:8px 10px;border-bottom:1px solid #f0f2f6;vertical-align:top}
 tbody tr:hover{background:#fafbfd}
@@ -74,6 +74,7 @@ tbody tr:last-child td{border-bottom:none}
 .truncate{display:block;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--primary);text-decoration:none}
 .truncate:hover{text-decoration:underline}
 .truncate.muted{color:var(--muted);max-width:220px}
+.name-text{display:block;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;color:var(--text)}
 .code-ok{color:var(--ok);font-weight:600}
 .code-bad{color:var(--bad);font-weight:600}
 .err-msg{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:12.5px}
@@ -117,12 +118,12 @@ tbody tr:last-child td{border-bottom:none}
 <div class="container">
   <header>
     <h1>🔗 链接有效性检查器</h1>
-    <p>粘贴、导入或拖拽链接：批量检查有效性，或定时监控可用率并查看历史趋势</p>
+    <p>粘贴、导入或拖拽链接（支持「名称 + Tab + 链接」两列格式）：批量检查有效性，或定时监控可用率并查看历史趋势</p>
   </header>
 
   <section class="card">
     <textarea id="urlInput" spellcheck="false"
-      placeholder="每行一个链接，也可以直接粘贴包含链接的任意文本（自动识别 http/https 链接，自动去重）&#10;&#10;例如：&#10;https://example.com&#10;www.baidu.com&#10;https://httpbin.org/status/404"></textarea>
+      placeholder="每行一个链接，或「名称 + Tab + 链接」两列；也可以直接粘贴包含链接的任意文本（自动识别 http/https 链接，自动去重）&#10;&#10;例如：&#10;百度	https://www.baidu.com&#10;https://example.com&#10;www.baidu.com&#10;https://httpbin.org/status/404"></textarea>
     <div class="toolbar">
       <button id="fileBtn" class="btn btn-ghost">📄 从文件导入</button>
       <input type="file" id="fileInput" accept=".txt,.csv,.html,.htm,.md,.json" hidden>
@@ -171,6 +172,7 @@ tbody tr:last-child td{border-bottom:none}
         <table>
           <thead><tr>
             <th style="width:40px">#</th>
+            <th>名称</th>
             <th>状态</th>
             <th style="width:32%">链接</th>
             <th>状态码</th>
@@ -179,7 +181,7 @@ tbody tr:last-child td{border-bottom:none}
             <th>错误信息</th>
           </tr></thead>
           <tbody id="resultsBody">
-            <tr id="emptyRow"><td colspan="7" class="empty">输入链接后点击「开始检查」，结果会实时显示在这里</td></tr>
+            <tr id="emptyRow"><td colspan="8" class="empty">输入链接后点击「开始检查」，结果会实时显示在这里</td></tr>
           </tbody>
         </table>
       </div>
@@ -270,10 +272,10 @@ tbody tr:last-child td{border-bottom:none}
   const catOf = r => r.ok ? 'ok' : (r.status ? 'bad' : 'err');
 
   const SAMPLE = [
-    'https://www.baidu.com',
-    'https://example.com',
-    'https://httpbin.org/status/200',
-    'https://httpbin.org/status/404',
+    '百度\twww.baidu.com',
+    '示例站\thttps://example.com',
+    'httpbin 正常\thttps://httpbin.org/status/200',
+    'httpbin 404\thttps://httpbin.org/status/404',
     'https://httpbin.org/redirect/3',
     'https://this-domain-should-not-exist-12345.com',
   ];
@@ -281,25 +283,52 @@ tbody tr:last-child td{border-bottom:none}
   /* ---------- 链接提取与去重 ---------- */
   const URL_RE = /https?:\/\/[^\s"'<>()（）]+/gi;
 
+  // 把一段文本规范成完整链接：http(s) 原样返回；裸域名自动补 https://；否则返回空
+  function normalizeUrl(s) {
+    if (/\s/.test(s)) return '';
+    if (/^https?:\/\//i.test(s)) return s;
+    if (/^[a-z0-9._-]+\.[a-z]{2,}([:/][^\s]*)?$/i.test(s)) return 'https://' + s;
+    return '';
+  }
+
+  // 从一段文本中取出第一个 http(s) 链接（找不到返回空）
+  function firstUrl(text) {
+    URL_RE.lastIndex = 0;
+    const m = URL_RE.exec(text);
+    if (!m) return '';
+    const u = m[0].replace(/[.,;:!?)\]}>"'，。；：！？]+$/, '');
+    return u.length > 10 ? u : '';
+  }
+
   function extractUrls(text) {
-    const found = new Set();
+    // 每行可写「名称 + Tab + 链接」两列，或直接写链接 / 包含链接的任意文本
+    const found = [], seen = new Set();
     for (const raw of text.split(/\r?\n/)) {
       const line = raw.trim();
       if (!line) continue;
+      if (line.includes('\t')) {
+        // 两列格式：第一列名称，第二列链接
+        const i = line.indexOf('\t');
+        const name = line.slice(0, i).trim();
+        const body = line.slice(i + 1).trim();
+        const u = normalizeUrl(body) || firstUrl(body);
+        if (u && !seen.has(u)) { seen.add(u); found.push({ name, url: u }); }
+        continue;
+      }
       // 整行是「不带协议的域名/地址」时，自动补 https://
-      if (!/^https?:\/\//i.test(line) && !/\s/.test(line) &&
-          /^[a-z0-9._-]+\.[a-z]{2,}([:/][^\s]*)?$/i.test(line)) {
-        found.add('https://' + line);
+      const whole = normalizeUrl(line);
+      if (whole) {
+        if (!seen.has(whole)) { seen.add(whole); found.push({ name: '', url: whole }); }
         continue;
       }
       let m;
       URL_RE.lastIndex = 0;
       while ((m = URL_RE.exec(line)) !== null) {
         const u = m[0].replace(/[.,;:!?)\]}>"'，。；：！？]+$/, '');
-        if (u.length > 10) found.add(u);
+        if (u.length > 10 && !seen.has(u)) { seen.add(u); found.push({ name: '', url: u }); }
       }
     }
-    return [...found].slice(0, MAX_URLS);
+    return found.slice(0, MAX_URLS);
   }
 
   let countTimer = null;
@@ -483,6 +512,17 @@ tbody tr:last-child td{border-bottom:none}
     tdIdx.className = 'idx';
     tdIdx.textContent = index + 1;
 
+    const tdName = document.createElement('td');
+    if (r.name) {
+      const nm = document.createElement('span');
+      nm.className = 'name-text';
+      nm.textContent = r.name;
+      nm.title = r.name;
+      tdName.appendChild(nm);
+    } else {
+      tdName.textContent = '—';
+    }
+
     const tdBadge = document.createElement('td');
     const badge = document.createElement('span');
     badge.className = 'badge ' + CATS[cat].badge;
@@ -519,7 +559,7 @@ tbody tr:last-child td{border-bottom:none}
     tdErr.textContent = r.error || '—';
     if (r.error) tdErr.title = r.error;
 
-    tr.append(tdIdx, tdBadge, tdUrl, tdCode, tdFinal, tdTime, tdErr);
+    tr.append(tdIdx, tdName, tdBadge, tdUrl, tdCode, tdFinal, tdTime, tdErr);
     return tr;
   }
 
@@ -536,9 +576,9 @@ tbody tr:last-child td{border-bottom:none}
   /* ---------- 导出 CSV ---------- */
   function exportCsv() {
     if (!results.length) { toast('暂无结果可导出'); return; }
-    const header = ['序号', '链接', '状态', 'HTTP状态码', '最终链接', '耗时(ms)', '错误信息'];
+    const header = ['序号', '名称', '链接', '状态', 'HTTP状态码', '最终链接', '耗时(ms)', '错误信息'];
     const rows = results.map((r, i) => [
-      i + 1, r.url, CATS[catOf(r)].name,
+      i + 1, r.name || '', r.url, CATS[catOf(r)].name,
       r.status == null ? '' : r.status,
       r.final_url || '', r.time_ms == null ? '' : r.time_ms, r.error || '',
     ]);
@@ -677,23 +717,22 @@ tbody tr:last-child td{border-bottom:none}
 
     // 状态网格
     const urlsOrder = status.urls && status.urls.length
-      ? status.urls.filter(u => shown.some(r => r.results.some(x => x.url === u)))
+      ? status.urls.filter(u => shown.some(r => r.results.some(x => x.url === u.url)))
       : dedupeUrls(shown);
     buildGrid(shown, urlsOrder);
 
     // 详情（保持选中链接）
-    if (selectedLink && urlsOrder.includes(selectedLink)) {
-      renderDetail(selectedLink, shown);
-    } else {
-      selectedLink = null;
-      els.linkDetail.hidden = true;
+    if (selectedLink) {
+      const item = urlsOrder.find(u => u.url === selectedLink);
+      if (item) renderDetail(item, shown);
+      else { selectedLink = null; els.linkDetail.hidden = true; }
     }
   }
 
   function dedupeUrls(rounds) {
     const seen = new Set(), out = [];
     for (const r of rounds) for (const x of r.results) {
-      if (!seen.has(x.url)) { seen.add(x.url); out.push(x.url); }
+      if (!seen.has(x.url)) { seen.add(x.url); out.push({ name: x.name || '', url: x.url }); }
     }
     return out;
   }
@@ -723,19 +762,19 @@ tbody tr:last-child td{border-bottom:none}
       grid.appendChild(h);
     });
 
-    urlsOrder.forEach(url => {
+    urlsOrder.forEach(item => {
       const link = document.createElement('div');
-      link.className = 'slink' + (url === selectedLink ? ' selected' : '');
-      link.textContent = url;
-      link.title = url;
+      link.className = 'slink' + (item.url === selectedLink ? ' selected' : '');
+      link.textContent = item.name || item.url;
+      link.title = item.name ? item.name + '\n' + item.url : item.url;
       link.addEventListener('click', () => {
-        selectedLink = url;
-        renderDetail(url, rounds);
+        selectedLink = item.url;
+        renderDetail(item, rounds);
         buildGrid(rounds, urlsOrder);
       });
       grid.appendChild(link);
       shown.forEach(r => {
-        const res = r.results.find(x => x.url === url);
+        const res = r.results.find(x => x.url === item.url);
         const cell = document.createElement('div');
         cell.className = 'scell';
         if (res) {
@@ -751,14 +790,14 @@ tbody tr:last-child td{border-bottom:none}
     els.grid.appendChild(grid);
   }
 
-  function renderDetail(url, rounds) {
-    const rows = rounds.map(r => r.results.find(x => x.url === url));
+  function renderDetail(item, rounds) {
+    const rows = rounds.map(r => r.results.find(x => x.url === item.url));
     const done = rows.filter(Boolean);
     const okN = done.filter(r => r.ok).length;
     const times = done.filter(r => r.ok && r.time_ms != null).map(r => r.time_ms);
     const avg = times.length ? Math.round(times.reduce((a, b) => a + b, 0) / times.length) : null;
 
-    els.detailTitle.textContent = '🔍 ' + url;
+    els.detailTitle.textContent = '🔍 ' + (item.name ? item.name + ' · ' + item.url : item.url);
     els.detailStats.innerHTML = '';
     const chips = [
       ['可用率', okN + '/' + done.length + '（' + (done.length ? (okN / done.length * 100).toFixed(1) : 0) + '%）'],
