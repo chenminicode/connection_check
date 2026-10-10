@@ -4,3 +4,5 @@ __pycache__/
 monitor.db
 monitor.db-wal
 monitor.db-shm
+*.swp
+*.bak
