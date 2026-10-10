@@ -17,6 +17,7 @@
   --shadow:0 1px 2px rgba(16,24,40,.05),0 1px 3px rgba(16,24,40,.07);
 }
 *{box-sizing:border-box;margin:0;padding:0}
+[hidden]{display:none !important}
 html{-webkit-text-size-adjust:100%}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.6;padding:36px 16px 72px}
 .container{max-width:1020px;margin:0 auto}
@@ -108,6 +109,21 @@ tbody tr:last-child td{border-bottom:none}
 .note code{background:#eef1f5;border-radius:5px;padding:1px 6px;font-family:ui-monospace,Menlo,monospace;font-size:12px}
 #toast{position:fixed;left:50%;bottom:32px;transform:translateX(-50%) translateY(8px);background:#1c2330;color:#fff;padding:10px 20px;border-radius:10px;font-size:14px;box-shadow:0 8px 24px rgba(16,24,40,.25);opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;z-index:99;max-width:80vw}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+/* 登录 */
+.head-row{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+.user-box{display:flex;align-items:center;gap:8px}
+.user-name{font-size:13.5px;font-weight:600}
+.user-hint{font-size:12.5px;color:var(--muted)}
+.modal-mask{position:fixed;inset:0;background:rgba(16,24,40,.45);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px}
+.modal{background:#fff;border-radius:var(--radius);padding:22px;width:340px;max-width:100%;box-shadow:0 12px 32px rgba(16,24,40,.25)}
+.modal-tabs{display:flex;gap:6px;margin-bottom:14px}
+.mtab{flex:1;padding:8px 14px;border:none;background:transparent;border-radius:8px;font-size:14px;font-weight:500;color:var(--muted);cursor:pointer;font-family:inherit;transition:background .15s,color .15s}
+.mtab.active{background:var(--primary);color:#fff}
+.field{display:block;font-size:13.5px;color:var(--muted);margin-bottom:10px}
+.field input{width:100%;margin-top:4px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit}
+.field input:focus{outline:none;border-color:var(--primary)}
+.auth-err{color:var(--bad);font-size:13px;margin-bottom:10px}
+.modal-actions{display:flex;justify-content:flex-end;gap:8px}
 @media (max-width:640px){
   .stats{grid-template-columns:repeat(2,1fr)}
   header h1{font-size:1.3rem}
@@ -117,8 +133,18 @@ tbody tr:last-child td{border-bottom:none}
 <body>
 <div class="container">
   <header>
-    <h1>🔗 链接有效性检查器</h1>
-    <p>粘贴、导入或拖拽链接（支持「名称 + Tab + 链接」两列格式）：批量检查有效性，或定时监控可用率并查看历史趋势</p>
+    <div class="head-row">
+      <div>
+        <h1>🔗 链接有效性检查器</h1>
+        <p>粘贴、导入或拖拽链接（支持「名称 + Tab + 链接」两列格式）：批量检查有效性，或定时监控可用率并查看历史趋势</p>
+      </div>
+      <div class="user-box">
+        <span class="user-name" id="userName" hidden></span>
+        <span class="user-hint" id="guestHint">游客模式</span>
+        <button id="loginBtn" class="btn btn-ghost btn-sm">登录 / 注册</button>
+        <button id="logoutBtn" class="btn btn-ghost btn-sm" hidden>退出</button>
+      </div>
+    </div>
   </header>
 
   <section class="card">
@@ -229,6 +255,27 @@ tbody tr:last-child td{border-bottom:none}
 </div>
 <div id="toast"></div>
 
+<div id="authModal" class="modal-mask" hidden>
+  <form class="modal" id="authForm">
+    <div class="modal-tabs">
+      <button type="button" class="mtab active" data-atab="login">登录</button>
+      <button type="button" class="mtab" data-atab="register">注册</button>
+    </div>
+    <label class="field">用户名
+      <input id="authUser" autocomplete="username" maxlength="32" placeholder="2-32 个字符">
+    </label>
+    <label class="field">密码
+      <input id="authPass" type="password" autocomplete="current-password" maxlength="128" placeholder="至少 6 个字符">
+    </label>
+    <p class="auth-err" id="authErr" hidden></p>
+    <div class="modal-actions">
+      <button type="button" id="authCancel" class="btn btn-ghost btn-sm">取消</button>
+      <button type="submit" id="authSubmit" class="btn btn-primary btn-sm">登录</button>
+    </div>
+    <p class="note" style="margin-top:10px">登录后链接与监控数据仅自己可见；游客数据为公共数据。密码经 scrypt 加盐哈希存储，仅保存在本机 monitor.db。</p>
+  </form>
+</div>
+
 <script>
 (() => {
   'use strict';
@@ -237,6 +284,8 @@ tbody tr:last-child td{border-bottom:none}
   const BASE = location.protocol === 'file:' ? 'http://localhost:8000' : '';
   const MAX_URLS = 2000;
   const GRID_MAX_COLS = 120;   // 状态网格最多显示的轮数
+  const TOKEN_KEY = 'lc_token';        // 登录令牌（localStorage）
+  const DRAFT_KEY = 'lc_draft_guest';  // 游客输入框草稿（localStorage）
 
   const els = {
     input: $('urlInput'), fileBtn: $('fileBtn'), fileInput: $('fileInput'),
@@ -257,12 +306,21 @@ tbody tr:last-child td{border-bottom:none}
     trendChart: $('trendChart'), grid: $('statusGrid'),
     linkDetail: $('linkDetail'), detailTitle: $('detailTitle'),
     detailStats: $('detailStats'), detailChart: $('detailChart'),
+    userName: $('userName'), guestHint: $('guestHint'),
+    loginBtn: $('loginBtn'), logoutBtn: $('logoutBtn'),
+    authModal: $('authModal'), authForm: $('authForm'),
+    authUser: $('authUser'), authPass: $('authPass'),
+    authErr: $('authErr'), authSubmit: $('authSubmit'), authCancel: $('authCancel'),
   };
 
   let urls = [], results = [], checked = 0;
   let stats = { ok: 0, bad: 0, err: 0 };
   let activeFilter = 'all';
   let running = false, controller = null, timerId = null, startTime = 0;
+  let TOKEN = localStorage.getItem(TOKEN_KEY) || '';
+  let ME = null;             // null = 游客；否则 {user_id, username}
+  let sessionEpoch = 0;      // 登录/退出时 +1，用于丢弃在途的旧身份响应
+  let authTab = 'login';
 
   const CATS = {
     ok:  { name: '有效',     badge: 'ok'  },
@@ -340,13 +398,13 @@ tbody tr:last-child td{border-bottom:none}
       els.count.textContent = n ? `已识别 ${n} 条链接（自动去重）` : '';
     }, 300);
   }
-  els.input.addEventListener('input', scheduleCount);
+  els.input.addEventListener('input', onInputChanged);
 
   /* ---------- 导入：文件选择 / 拖拽 ---------- */
   function appendToInput(text) {
     const cur = els.input.value.trim();
     els.input.value = cur ? cur + '\n' + text.trim() : text.trim();
-    scheduleCount();
+    onInputChanged();
   }
   els.fileBtn.addEventListener('click', () => els.fileInput.click());
   els.fileInput.addEventListener('change', async () => {
@@ -371,11 +429,12 @@ tbody tr:last-child td{border-bottom:none}
 
   els.sampleBtn.addEventListener('click', () => {
     els.input.value = SAMPLE.join('\n');
-    scheduleCount();
+    onInputChanged();
   });
   els.clearBtn.addEventListener('click', () => {
     els.input.value = '';
     els.count.textContent = '';
+    onInputChanged();
   });
 
   /* ---------- 标签页 ---------- */
@@ -387,6 +446,23 @@ tbody tr:last-child td{border-bottom:none}
     if (name === 'monitor') pollMonitor();
   }
   tabButtons.forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
+
+  /* ---------- 统一请求封装 ---------- */
+  // 注入登录 token；非 /auth/* 请求遇到 401 说明 token 失效，自动退回游客视图
+  async function api(path, opts) {
+    const o = Object.assign({}, opts || {});
+    const headers = Object.assign({}, o.headers || {});
+    if (TOKEN) headers['Authorization'] = 'Bearer ' + TOKEN;
+    o.headers = headers;
+    const resp = await fetch(BASE + path, o);
+    if (resp.status === 401 && TOKEN && !path.startsWith('/auth/')) {
+      TOKEN = '';  // 先清 token，避免 applySession 收尾时再次请求
+      localStorage.removeItem(TOKEN_KEY);
+      applySession(null, '');
+      toast('登录已过期，请重新登录');
+    }
+    return resp;
+  }
 
   /* ---------- 即时批量检查 ---------- */
   els.checkBtn.addEventListener('click', run);
@@ -414,7 +490,7 @@ tbody tr:last-child td{border-bottom:none}
     timerId = setInterval(tick, 100);
 
     try {
-      const resp = await fetch(BASE + '/check', {
+      const resp = await api('/check', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ urls, ignore_ssl: els.ignoreSsl.checked }),
@@ -607,16 +683,18 @@ tbody tr:last-child td{border-bottom:none}
   els.refreshBtn.addEventListener('click', pollMonitor);
 
   async function startMonitor() {
+    const epoch = sessionEpoch;
     const list = extractUrls(els.input.value);
     if (!list.length) { toast('请先在输入框导入链接'); switchTab('check'); return; }
     const iv = parseFloat(els.intervalInput.value);
     if (!(iv >= 0.1)) { toast('间隔时间需 ≥ 0.1 分钟'); return; }
     try {
-      const resp = await fetch(BASE + '/monitor/start', {
+      const resp = await api('/monitor/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ urls: list, interval_minutes: iv }),
       });
+      if (epoch !== sessionEpoch) return;
       const j = await resp.json();
       if (!resp.ok) throw new Error(j.error || '启动失败');
       lastRenderedT = null;
@@ -627,8 +705,10 @@ tbody tr:last-child td{border-bottom:none}
   }
 
   async function stopMonitor() {
+    const epoch = sessionEpoch;
     try {
-      const resp = await fetch(BASE + '/monitor/stop', { method: 'POST' });
+      const resp = await api('/monitor/stop', { method: 'POST' });
+      if (epoch !== sessionEpoch) return;
       const j = await resp.json();
       if (!resp.ok) throw new Error(j.error || '停止失败');
       renderMonitorStatus(j);
@@ -637,21 +717,24 @@ tbody tr:last-child td{border-bottom:none}
   }
 
   async function checkNow() {
+    const epoch = sessionEpoch;
     const list = extractUrls(els.input.value);
     if (!list.length) { toast('请先在输入框导入链接'); return; }
     try {
-      const resp = await fetch(BASE + '/monitor/check_now', {
+      const resp = await api('/monitor/check_now', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ urls: list }),
       });
+      if (epoch !== sessionEpoch) return;
       if (!resp.ok) throw new Error((await resp.json()).error || '检查失败');
       toast('已开始检查一轮，结果将自动显示');
       // 快速轮询直到出现新结果（最多 20 秒）
       const before = Date.now() / 1000;
       const iv = setInterval(async () => {
+        if (epoch !== sessionEpoch) { clearInterval(iv); return; }
         try {
-          const s = await (await fetch(BASE + '/monitor/status')).json();
+          const s = await (await api('/monitor/status')).json();
           if (s.last_check_at && s.last_check_at > before) {
             clearInterval(iv);
             await pollMonitor();
@@ -663,14 +746,17 @@ tbody tr:last-child td{border-bottom:none}
   }
 
   async function pollMonitor() {
+    const epoch = sessionEpoch;
     let status;
-    try { status = await (await fetch(BASE + '/monitor/status')).json(); }
+    try { status = await (await api('/monitor/status')).json(); }
     catch { renderServerDown(); return; }
+    if (epoch !== sessionEpoch) return;
     renderMonitorStatus(status);
     if (!status.running && !status.last_check_at) return;
     let hist;
-    try { hist = await (await fetch(BASE + '/history?limit=300')).json(); }
+    try { hist = await (await api('/history?limit=300')).json(); }
     catch { return; }
+    if (epoch !== sessionEpoch) return;
     if (!hist.rounds || !hist.rounds.length) return;
     const t = hist.rounds[hist.rounds.length - 1].t;
     if (t === lastRenderedT) return;
@@ -931,10 +1017,158 @@ tbody tr:last-child td{border-bottom:none}
     toastTimer = setTimeout(() => els.toast.classList.remove('show'), 3200);
   }
 
+  /* ---------- 输入框自动保存 ---------- */
+  let saveTimer = null;
+
+  function onInputChanged() {
+    scheduleCount();
+    scheduleSave();
+  }
+
+  function scheduleSave() {
+    const uid = ME ? ME.user_id : null;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      if (!uid) { localStorage.setItem(DRAFT_KEY, els.input.value); return; }  // 游客：本地草稿
+      if (!ME || ME.user_id !== uid) return;                                   // 期间切换了身份
+      api('/links', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ text: els.input.value }) }).catch(() => {});
+    }, 800);
+  }
+
+  // 立即落盘（切换身份前调用，保住防抖窗口内的编辑）
+  async function flushLinks() {
+    if (!ME || !TOKEN) return;
+    clearTimeout(saveTimer);
+    try {
+      await api('/links', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ text: els.input.value }) });
+    } catch {}
+  }
+
+  /* ---------- 登录态切换 ---------- */
+  async function applySession(user, token) {
+    // 切换前收尾：游客存本地草稿；登录用户把未落盘的编辑立即提交
+    if (!ME && els.input.value) localStorage.setItem(DRAFT_KEY, els.input.value);
+    if (ME && TOKEN) await flushLinks();
+    clearTimeout(saveTimer);
+
+    ME = user || null;
+    TOKEN = token || '';
+    if (TOKEN) localStorage.setItem(TOKEN_KEY, TOKEN); else localStorage.removeItem(TOKEN_KEY);
+    sessionEpoch++;  // 在途的旧身份请求全部作废
+
+    // 重置监控视图，避免把上一个身份的历史渲染到当前界面
+    lastRenderedT = null; selectedLink = null;
+    els.vizCard.hidden = true; els.linkDetail.hidden = true;
+    els.grid.innerHTML = '<div class="empty">暂无历史数据</div>';
+    els.monStatus.textContent = '正在加载监控状态…';
+
+    // 头部
+    els.userName.textContent = ME ? '👤 ' + ME.username : '';
+    els.userName.hidden = !ME;
+    els.guestHint.hidden = !!ME;
+    els.loginBtn.hidden = !!ME;
+    els.logoutBtn.hidden = !ME;
+
+    // 输入框内容
+    if (ME) {
+      try {
+        const j = await (await api('/links')).json();
+        const text = (j && j.text) || '';
+        if (text) { els.input.value = text; scheduleCount(); }
+        else if (els.input.value.trim()) scheduleSave();  // 首次登录：认领当前内容
+      } catch {}
+    } else {
+      els.input.value = localStorage.getItem(DRAFT_KEY) || '';
+      scheduleCount();
+    }
+    pollMonitor();
+  }
+
+  /* ---------- 登录 / 注册弹窗 ---------- */
+  els.loginBtn.addEventListener('click', () => openAuth('login'));
+  els.logoutBtn.addEventListener('click', async () => {
+    const old = TOKEN;
+    if (ME && old) await flushLinks();     // 先落盘（若 token 已失效，api 会拦截并自动退回游客）
+    if (TOKEN === old) TOKEN = '';         // 阻止 applySession 用已删 token 再 flush
+    if (ME && old) {
+      try {
+        await api('/auth/logout', { method: 'POST',
+                                    headers: { 'Authorization': 'Bearer ' + old } });
+      } catch {}
+    }
+    await applySession(null, '');
+    toast('已退出登录，监控仍在后台运行');
+  });
+  els.authCancel.addEventListener('click', () => { els.authModal.hidden = true; });
+  els.authModal.addEventListener('click', e => {
+    if (e.target === els.authModal) els.authModal.hidden = true;
+  });
+  document.querySelectorAll('.mtab').forEach(b =>
+    b.addEventListener('click', () => switchAuthTab(b.dataset.atab)));
+
+  function switchAuthTab(t) {
+    authTab = t;
+    document.querySelectorAll('.mtab').forEach(b =>
+      b.classList.toggle('active', b.dataset.atab === t));
+    els.authSubmit.textContent = t === 'login' ? '登录' : '注册';
+    els.authPass.setAttribute('autocomplete', t === 'login' ? 'current-password' : 'new-password');
+    els.authErr.hidden = true;
+  }
+
+  function openAuth(tab) {
+    els.authUser.value = ''; els.authPass.value = '';
+    switchAuthTab(tab);
+    els.authModal.hidden = false;
+    els.authUser.focus();
+  }
+
+  function showAuthErr(msg) {
+    els.authErr.textContent = msg;
+    els.authErr.hidden = false;
+  }
+
+  els.authForm.addEventListener('submit', async e => {
+    e.preventDefault();
+    const username = els.authUser.value.trim(), password = els.authPass.value;
+    if (!username || !password) { showAuthErr('请输入用户名和密码'); return; }
+    els.authSubmit.disabled = true;
+    try {
+      const resp = await api('/auth/' + authTab, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      const j = await resp.json().catch(() => ({}));
+      if (!resp.ok) { showAuthErr(j.error || `失败（HTTP ${resp.status}）`); return; }
+      els.authModal.hidden = true;
+      await applySession({ user_id: j.user_id, username: j.username }, j.token);
+      toast(authTab === 'login' ? `已登录：${j.username}` : `注册成功，已登录：${j.username}`);
+    } catch {
+      showAuthErr('无法连接本地服务，请先运行 python3 server.py');
+    } finally {
+      els.authSubmit.disabled = false;
+    }
+  });
+
   /* ---------- 初始化 ---------- */
-  scheduleCount();
-  pollMonitor();
-  setInterval(pollMonitor, 10000);
+  (async function init() {
+    els.input.value = localStorage.getItem(DRAFT_KEY) || '';  // 先恢复游客草稿，避免闪烁
+    scheduleCount();
+    if (TOKEN) {
+      try {
+        const resp = await api('/auth/me');
+        if (resp.ok) {
+          const me = await resp.json();
+          await applySession({ user_id: me.user_id, username: me.username }, TOKEN);
+        } else {
+          TOKEN = ''; localStorage.removeItem(TOKEN_KEY);  // token 失效 → 游客
+        }
+      } catch { /* 服务未启动：保留 token，维持游客视图，下次刷新再试 */ }
+    }
+    pollMonitor();
+    setInterval(pollMonitor, 10000);
+  })();
 })();
 </script>
 </body>
